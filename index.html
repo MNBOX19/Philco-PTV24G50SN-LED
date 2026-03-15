@@ -24,7 +24,6 @@
             -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none;           
         }
         
-        /* OTIMIZAÇÃO EXTREMA DE MEMÓRIA PARA PHILCO PTV24G50SN */
         html, body {
             background: #000000; color: #ffffff; font-family: 'Montserrat', sans-serif;
             position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
@@ -36,10 +35,8 @@
         .layer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; background: transparent; will-change: opacity; }
 
         button, .smart-card, .cat-item, .item, .power-btn, .key, .toggle-btn { cursor: pointer; }
-        
         .cat-list, .item-list, .meta { overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
-        /* FOCO LIMPO - Sem box-shadow para não pesar na GPU da TV */
         .focused { 
             border: 3px solid #fff !important; background: var(--main-color) !important; color: #fff !important; 
             z-index: 50; transform: none !important; box-shadow: none !important;
@@ -49,7 +46,6 @@
         #vid-box.focused { border: 4px solid var(--main-color) !important; background: transparent !important; }
         #vid-box.fs, #vid-box.fs.focused { border: none !important; width: 100% !important; height: 100% !important; z-index: 9999 !important; position: fixed !important; top: 0 !important; left: 0 !important; background: #000 !important; }
 
-        /* Estilos Base */
         .login-box { width: 450px; max-width: 90%; padding: 40px; background: #0a0a0a; border: 2px solid var(--main-color); border-radius: 12px; text-align: center; }
         .logo-txt { font-size: 4.5vh; font-weight: 900; margin-bottom: 2.5vh; text-transform: uppercase;}
         .brand-text { color: var(--main-color); }
@@ -99,13 +95,16 @@
         .item.playing { color: var(--main-color); background: #111; border-left: 4px solid var(--main-color); }
         .fav-icon { float: right; color: var(--main-color); }
 
-        /* PLAYER OTIMIZADO C/ ANTI-TELA PRETA E FULLSCREEN FILL */
-        .vid-box { width: 100%; height: 50vh; background: #000; position: relative; border-bottom: 2px solid #222; overflow: hidden; touch-action: manipulation; transform: translateZ(0); }
-        #player-container { width:100%; height:100%; background:#000; transform: translateZ(0); }
-        video { width: 100%; height: 100%; object-fit: contain; background: #000; z-index: 1; transform: translateZ(0); }
-        #vid-box.fs video { object-fit: fill !important; } /* Cobre a tela toda no modo Maratona/Filme */
+        .vid-box { width: 100%; height: 50vh; background: #050505; position: relative; border-bottom: 2px solid #222; overflow: hidden; touch-action: manipulation; transform: translateZ(0); }
+        #player-container { width:100%; height:100%; background:#050505; transform: translateZ(0); display: flex; align-items: center; justify-content: center; }
+        
+        /* Fundo com logo caso a tela tente ficar preta */
+        #player-container::before { content: "IPTV MAX PRO"; position: absolute; font-size: 4vh; color: #1a1a1a; font-weight: 900; z-index: 0; pointer-events: none; }
+        
+        video { width: 100%; height: 100%; object-fit: contain; background: transparent; z-index: 1; transform: translateZ(0); }
+        #vid-box.fs video { object-fit: fill !important; }
 
-        .buffer-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 50; display: none; flex-direction: column; align-items: center; justify-content: center; }
+        .buffer-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 50; display: none; flex-direction: column; align-items: center; justify-content: center; }
         .buffer-msg { color: #fff; font-weight: 900; margin-top: 15px; font-size: 2.5vh; text-shadow: 2px 2px 4px #000; }
 
         .meta { padding: 25px; flex: 1; background: #0a0a0c; display: flex; flex-direction: column; }
@@ -239,7 +238,7 @@
     </div>
 
     <script>
-        /* === MOTOR HÍBRIDO MAX PRO 24/7 - LIMPEZA NUCLEAR DE RAM === */
+        /* === MOTOR MAX PRO 24/7 - LIMPEZA SILENCIOSA (SEM SAIR DA TELA CHEIA) === */
         
         function safePlay(vidElement) {
             if (!vidElement) return;
@@ -270,7 +269,7 @@
 
         var PlayerEngine = {
             video: null, url: null, monitorTimer: null, lastTime: 0, stallCount: 0, 
-            retryCount: 0, maxRetries: 3, liveMaxRetries: 99, isBuffering: false,
+            retryCount: 0, maxRetries: 4, liveMaxRetries: 999, isBuffering: false,
 
             init: function() { this.bindVideo(); },
 
@@ -298,19 +297,23 @@
                 this.video.controls = false; this.video.setAttribute('playsinline', 'true');
             },
 
-            /* Limpeza Agressiva de Memória (Sem recriar DOM para poupar a CPU da Philco) */
-            limparMemoriaDecoder: function() {
-                if(this.video) {
-                    this.video.pause();
-                    this.video.removeAttribute('src');
-                    try { this.video.load(); } catch(e) {}
+            /* Destrói fisicamente o player e recria, matando o cache da TV sem piscar a tela inteira */
+            resetDOM: function() {
+                var container = document.getElementById('player-container');
+                if(container) {
+                    var oldVid = document.getElementById('player');
+                    if(oldVid) { oldVid.onerror = null; oldVid.onended = null; oldVid.pause(); oldVid.removeAttribute('src'); oldVid.load(); container.removeChild(oldVid); }
+                    container.innerHTML = '';
+                    var newVid = document.createElement('video');
+                    newVid.id = 'player'; newVid.style.width = '100%'; newVid.style.height = '100%'; newVid.style.objectFit = 'contain'; newVid.style.background = 'transparent'; newVid.style.transform = 'translateZ(0)'; newVid.playsInline = true; newVid.webkitPlaysInline = true;
+                    container.appendChild(newVid); this.bindVideo();
                 }
             },
 
             play: function(url) {
                 if(this.url === url && this.video && !this.video.paused) return;
                 
-                this.limparMemoriaDecoder(); // Zera o decoder físico da TV antes de tocar o novo
+                this.resetDOM(); 
                 
                 this.url = url; this.stallCount = 0; this.retryCount = 0;
                 this.showBuffer('CONECTANDO SINAL...'); document.getElementById('pause-layer').style.display = 'none';
@@ -350,18 +353,16 @@
                 if (this.retryCount < limit) {
                     this.retryCount++;
                     this.showBuffer('RECONECTANDO...');
-                    this.limparMemoriaDecoder(); // Tenta salvar a RAM antes de reconectar
+                    this.resetDOM(); // Evita tela preta injetando um novo motor
                     setTimeout(function() { PlayerEngine.play(PlayerEngine.url); }, 2000);
                 } else {
                     this.hardStop(); this.showBuffer('FALHA NO SINAL.');
                 }
             },
 
-            hardReset: function() { if(!this.url) return; var currentUrl = this.url; this.hardStop(); this.retryCount = 0; setTimeout(function() { PlayerEngine.play(currentUrl); }, 500); },
-            
             hardStop: function() { 
                 this.stopMonitor(); 
-                this.limparMemoriaDecoder();
+                this.resetDOM();
                 this.url = null; this.hideBuffer(); 
             }
         };
@@ -369,7 +370,7 @@
         var App = {
             validCategories: null, scr: 0, zone: 0, idx: 0, lastCatIdx: 0, creds: {}, fullData: [], globalData: null, playingId: null,
             cfg: { filter: false, format: 'ts_native', lang: 'pt' }, userInfo: null, lastEnter: 0, touchTimer: null,
-            seriesDataCache: null, lastSeriesIdx: 0, sessionStartTime: null, refreshInterval: 4 * 60 * 60 * 1000, refreshTimer: null,
+            seriesDataCache: null, lastSeriesIdx: 0, refreshInterval: 4 * 60 * 60 * 1000, refreshTimer: null,
             lastTap: 0, tapTimer: null, pageSize: 60, mobileRenderedPages: 1, 
 
             pad: function(n) { return (n < 10) ? ("0" + n) : n; },
@@ -377,12 +378,10 @@
 
             i18n: { 
                 'pt': { ph_dns: 'URL DNS', ph_user: 'USUÁRIO', ph_pass: 'SENHA', btn_login: 'CONECTAR', load_init: 'INICIANDO...', load_auth: 'AUTENTICANDO...', load_net: 'REDE...', err_net: 'Falha Conexão', err_auth: 'Login Inválido', set_title: 'MINHA CONTA', set_u: 'USUÁRIO:', set_e: 'VENCE:', set_c: 'TELAS:', set_d: 'CRIADO:', set_opt: 'OPÇÕES', set_filter: 'XXX:', set_format: 'FMT AO VIVO:', set_lang: 'IDIOMA:', set_back: 'VOLTAR', yes: 'SIM', no: 'NÃO', fmt_def: 'PADRÃO', dash_live: 'TV AO VIVO', dash_movie: 'FILMES', dash_series: 'SÉRIES', lbl_exp: 'VENCIMENTO', lbl_conn: 'TELAS', cat_title: 'MENU', cat_fav: '⭐ FAVORITOS', search_ph: 'BUSCAR...', empty: 'Vazio', loading: 'CARREGANDO...', loading_ep: 'EPISÓDIOS...', no_ep: 'Sem episódios.', osd_play: '▶ TOCA', osd_pause: '⏸ PAUSA', osd_lost: 'SEM SINAL', key_fs: 'TELA CHEIA (R)', key_top: 'TOPO (G)', key_search: 'BUSCA (Y)', key_menu: 'MENU (B)', tot_chan: 'CANAIS', tot_mov: 'FILMES', tot_ser: 'SÉRIES', tot_pre: 'TOTAL: ', def_movie: 'Filme', def_ep: 'Episódio', unlimited: 'Ilimitado', unknown: 'Desconhecido', flag: '🇧🇷 PT' },
-                'en': { ph_dns: 'DNS URL', ph_user: 'USERNAME', ph_pass: 'PASSWORD', btn_login: 'CONNECT', load_init: 'STARTING...', load_auth: 'LOGGING IN...', load_net: 'NETWORK...', err_net: 'Connection Failed', err_auth: 'Invalid Login', set_title: 'MY ACCOUNT', set_u: 'USER:', set_e: 'EXP:', set_c: 'CONN:', set_d: 'DATE:', set_opt: 'OPTIONS', set_filter: 'BLOCK:', set_format: 'LIVE FMT:', set_lang: 'LANG:', set_back: 'BACK', yes: 'YES', no: 'NO', fmt_def: 'DEF', dash_live: 'LIVE TV', dash_movie: 'MOVIES', dash_series: 'SERIES', lbl_exp: 'EXPIRATION', lbl_conn: 'SCREENS', cat_title: 'MENU', cat_fav: '⭐ FAV', search_ph: 'SEARCH...', empty: 'Empty', loading: 'LOADING...', loading_ep: 'EPISODES...', no_ep: 'No episodes.', osd_play: '▶ PLAY', osd_pause: '⏸ PAUSE', osd_lost: 'NO SIGNAL', key_fs: 'FULLSCREEN (R)', key_top: 'TOP (G)', key_search: 'FIND (Y)', key_menu: 'MENU (B)', tot_chan: 'CH', tot_mov: 'MOV', tot_ser: 'SER', tot_pre: 'TOTAL: ', def_movie: 'Movie', def_ep: 'Episode', unlimited: 'Unlimited', unknown: 'Unknown', flag: '🇺🇸 EN' },
-                'es': { ph_dns: 'URL DNS', ph_user: 'USUARIO', ph_pass: 'CLAVE', btn_login: 'CONECTAR', load_init: 'INICIANDO...', load_auth: 'AUTENTICANDO...', load_net: 'RED...', err_net: 'Fallo Conexión', err_auth: 'Login Inválido', set_title: 'MI CUENTA', set_u: 'USUARIO:', set_e: 'VENCE:', set_c: 'PANTALLAS:', set_d: 'CREADO:', set_opt: 'OPCIONES', set_filter: 'XXX:', set_format: 'FMT VIVO:', set_lang: 'IDIOMA:', set_back: 'VOLVER', yes: 'SÍ', no: 'NO', fmt_def: 'DEFECTO', dash_live: 'TV VIVO', dash_movie: 'PELÍCULAS', dash_series: 'SERIES', lbl_exp: 'VENCIMIENTO', lbl_conn: 'PANTALLAS', cat_title: 'MENÚ', cat_fav: '⭐ FAVORITOS', search_ph: 'BUSCAR...', empty: 'Vacío', loading: 'CARGANDO...', loading_ep: 'EPISODIOS...', no_ep: 'No hay episodios.', osd_play: '▶ PLAY', osd_pause: '⏸ PAUSA', osd_lost: 'SIN SEÑAL', key_fs: 'PANTALLA COMPLETA (R)', key_top: 'TOP (G)', key_search: 'BUSCA (Y)', key_menu: 'MENÚ (B)', tot_chan: 'CANALES', tot_mov: 'PELIS', tot_ser: 'SERIES', tot_pre: 'TOTAL: ', def_movie: 'Película', def_ep: 'Episodio', unlimited: 'Ilimitado', unknown: 'Desconocido', flag: '🇪🇸 ES' }
             },
 
             applyLang: function() {
-                var t = this.i18n[this.cfg.lang] || this.i18n['pt'];
+                var t = this.i18n['pt'];
                 document.getElementById('i0').placeholder = t.ph_dns; document.getElementById('i1').placeholder = t.ph_user; document.getElementById('i2').placeholder = t.ph_pass; document.getElementById('i3').innerText = t.btn_login;
                 document.getElementById('set-title-txt').innerHTML = '<i class="fas fa-user-shield" style="margin-right:10px; color: var(--main-color);"></i>' + t.set_title;
                 document.getElementById('lbl-set-u').innerText = t.set_u; document.getElementById('lbl-set-e').innerText = t.set_e; document.getElementById('lbl-set-c').innerText = t.set_c; document.getElementById('lbl-set-d').innerText = t.set_d;
@@ -397,42 +396,45 @@
                 FavManager.init(); setInterval(function() { window.status = "keep_alive_" + new Date().getTime(); }, 40000); 
                 if(localStorage.getItem('rc_cfg_filter')) this.cfg.filter = (localStorage.getItem('rc_cfg_filter') === 'true');
                 var savedFmt = localStorage.getItem('rc_cfg_format'); this.cfg.format = (savedFmt === 'm3u8_native' || savedFmt === 'ts_native') ? savedFmt : 'ts_native'; 
-                if(localStorage.getItem('rc_cfg_lang')) this.cfg.lang = localStorage.getItem('rc_cfg_lang'); else this.cfg.lang = 'pt'; 
                 this.applyLang(); PlayerEngine.init(); setInterval(this.updateClock, 1000); this.updateClock();
                 
                 document.getElementById('item-list').addEventListener('scroll', function() { var el = this; if(el.scrollTop + el.clientHeight >= el.scrollHeight - 100) { App.loadMoreMobile(); } });
 
-                var needsRefresh = this.checkExistingSession();
-                if(localStorage.getItem('rc_h') && !needsRefresh) {
+                if(localStorage.getItem('rc_h')) {
                     document.getElementById('i0').value = localStorage.getItem('rc_h'); document.getElementById('i1').value = localStorage.getItem('rc_u'); document.getElementById('i2').value = localStorage.getItem('rc_p');
-                    document.getElementById('loader').classList.remove('hide'); document.getElementById('load-txt').innerText = this.i18n[this.cfg.lang].load_init; App.login(true);
+                    document.getElementById('loader').classList.remove('hide'); document.getElementById('load-txt').innerText = this.i18n['pt'].load_init; App.login(true);
                 } else { this.setScr(0); }
             },
 
-            startSessionMonitor: function() { this.sessionStartTime = Date.now(); if (this.refreshTimer) { clearTimeout(this.refreshTimer); } this.refreshTimer = setTimeout(function() { App.performAutoRefresh(); }, this.refreshInterval); localStorage.setItem('rc_session_start', this.sessionStartTime.toString()); localStorage.setItem('rc_refresh_interval', this.refreshInterval.toString()); },
-            
-            performAutoRefresh: function() { 
-                if (App.currentMode === 'live' && App.playingId) { 
-                    PlayerEngine.hardReset(); App.sessionStartTime = Date.now(); 
-                    if (App.refreshTimer) { clearTimeout(App.refreshTimer); } 
-                    App.refreshTimer = setTimeout(function() { App.performAutoRefresh(); }, App.refreshInterval); 
-                } else if ((App.currentMode === 'movie' || App.currentMode === 'series') && App.playingId && PlayerEngine.video && !PlayerEngine.video.paused) { 
-                    /* Adia se estiver no meio do filme */
-                    if (App.refreshTimer) { clearTimeout(App.refreshTimer); } 
-                    App.refreshTimer = setTimeout(function() { App.performAutoRefresh(); }, 30 * 60 * 1000); 
-                } else { 
-                    PlayerEngine.hardStop(); localStorage.removeItem('rc_session_start'); localStorage.removeItem('rc_refresh_interval'); 
-                    setTimeout(function() { location.reload(); }, 500); 
-                } 
+            /* LIMPEZA SILENCIOSA: Ocorre sem recarregar a página e sem sair do Fullscreen */
+            startSessionMonitor: function() { 
+                if (this.refreshTimer) { clearTimeout(this.refreshTimer); } 
+                this.refreshTimer = setTimeout(function() { App.performSeamlessFlush(); }, this.refreshInterval); 
             },
             
-            checkExistingSession: function() { var savedStart = localStorage.getItem('rc_session_start'); var savedInterval = localStorage.getItem('rc_refresh_interval'); if (savedStart && savedInterval) { var elapsed = Date.now() - parseInt(savedStart); var interval = parseInt(savedInterval); if (elapsed >= interval) { this.performAutoRefresh(); return true; } else { var remaining = interval - elapsed; this.sessionStartTime = parseInt(savedStart); if (this.refreshTimer) { clearTimeout(this.refreshTimer); } this.refreshTimer = setTimeout(function() { App.performAutoRefresh(); }, remaining); } } return false; },
+            performSeamlessFlush: function() { 
+                if (!App.playingId || !PlayerEngine.url) {
+                    App.refreshTimer = setTimeout(function() { App.performSeamlessFlush(); }, App.refreshInterval); return;
+                }
+
+                PlayerEngine.showBuffer('OTIMIZANDO...');
+                
+                var currentTime = 0;
+                if (App.currentMode !== 'live' && PlayerEngine.video) { currentTime = PlayerEngine.video.currentTime; }
+
+                PlayerEngine.resetDOM(); // Limpa a memória física
+
+                setTimeout(function() {
+                    PlayerEngine.play(PlayerEngine.url);
+                    if (currentTime > 0 && PlayerEngine.video) { PlayerEngine.video.currentTime = currentTime; }
+                    App.refreshTimer = setTimeout(function() { App.performSeamlessFlush(); }, App.refreshInterval);
+                }, 1000);
+            },
 
             toggleCfg: function(type) { if(type === 'filter') { this.cfg.filter = !this.cfg.filter; localStorage.setItem('rc_cfg_filter', this.cfg.filter); } this.updateCfgUI(); },
             toggleFormat: function() { this.cfg.format = (this.cfg.format === 'ts_native') ? 'm3u8_native' : 'ts_native'; localStorage.setItem('rc_cfg_format', this.cfg.format); this.updateCfgUI(); },
-            toggleLang: function() { var langs = ['en', 'pt', 'es']; var current = langs.indexOf(this.cfg.lang); var next = (current + 1) % langs.length; this.cfg.lang = langs[next]; localStorage.setItem('rc_cfg_lang', this.cfg.lang); this.applyLang(); },
             
-            updateCfgUI: function() { var t = this.i18n[this.cfg.lang]; document.getElementById('lbl-filter').innerText = this.cfg.filter ? t.yes : t.no; document.getElementById('s2').style.borderColor = this.cfg.filter ? '#00C851' : '#333'; document.getElementById('lbl-filter').style.color = this.cfg.filter ? '#00C851' : '#888'; var fLbl = this.cfg.format === 'm3u8_native' ? "M3U8 NAT" : "TS NAT"; document.getElementById('lbl-format').innerText = fLbl; document.getElementById('s3').style.borderColor = (this.cfg.format !== 'ts_native') ? '#00C851' : '#333'; document.getElementById('lbl-format').style.color = (this.cfg.format !== 'ts_native') ? '#00C851' : '#888'; document.getElementById('lbl-lang').innerText = t.flag; },
+            updateCfgUI: function() { var t = this.i18n['pt']; document.getElementById('lbl-filter').innerText = this.cfg.filter ? t.yes : t.no; document.getElementById('s2').style.borderColor = this.cfg.filter ? '#00C851' : '#333'; document.getElementById('lbl-filter').style.color = this.cfg.filter ? '#00C851' : '#888'; var fLbl = this.cfg.format === 'm3u8_native' ? "M3U8 NAT" : "TS NAT"; document.getElementById('lbl-format').innerText = fLbl; document.getElementById('s3').style.borderColor = (this.cfg.format !== 'ts_native') ? '#00C851' : '#333'; document.getElementById('lbl-format').style.color = (this.cfg.format !== 'ts_native') ? '#00C851' : '#888'; document.getElementById('lbl-lang').innerText = t.flag; },
             updateClock: function() { var now = new Date(); var h = now.getHours(); var m = now.getMinutes(); if(m<10) m='0'+m; var elT = document.getElementById('clock-time'); if(elT) elT.innerText = h + ":" + m; var elD = document.getElementById('clock-date'); if(elD) elD.innerText = now.toLocaleDateString('pt-BR'); },
 
             req: function(url, cb) { var x = new XMLHttpRequest(); var cacheBuster = (url.indexOf('?') > -1 ? '&' : '?') + '_t=' + new Date().getTime(); x.open("GET", url + cacheBuster, true); x.timeout = 20000; x.onload = function() { if(x.status===200) { try{cb(JSON.parse(x.responseText));}catch(e){cb(null);} } else cb(null); }; x.onerror = function(){ cb('ERR_NET'); }; x.send(); },
@@ -440,17 +442,17 @@
             login: function(isAuto) {
                 var h = document.getElementById('i0').value.trim(); var u = document.getElementById('i1').value.trim(); var p = document.getElementById('i2').value.trim();
                 if(h.endsWith('/')) h = h.slice(0, -1); if(h.indexOf('http') === -1) h = 'http://' + h;
-                if(!isAuto) { document.getElementById('loader').classList.remove('hide'); document.getElementById('load-txt').innerText = this.i18n[this.cfg.lang].load_auth; requestNativeFullscreen(document.documentElement); } 
+                if(!isAuto) { document.getElementById('loader').classList.remove('hide'); document.getElementById('load-txt').innerText = this.i18n['pt'].load_auth; requestNativeFullscreen(document.documentElement); } 
                 this.req(h+"/player_api.php?username="+u+"&password="+p, function(d){
                     document.getElementById('loader').classList.add('hide');
-                    if(d === 'ERR_NET') { if(isAuto) { document.getElementById('loader').classList.remove('hide'); document.getElementById('load-txt').innerText = App.i18n[App.cfg.lang].load_net; setTimeout(function(){ App.login(true); }, 5000); } else { App.setScr(0); document.getElementById('msg-login').innerHTML = App.i18n[App.cfg.lang].err_net; } return; }
+                    if(d === 'ERR_NET') { if(isAuto) { document.getElementById('loader').classList.remove('hide'); document.getElementById('load-txt').innerText = App.i18n['pt'].load_net; setTimeout(function(){ App.login(true); }, 5000); } else { App.setScr(0); document.getElementById('msg-login').innerHTML = App.i18n['pt'].err_net; } return; }
                     if(d && d.user_info && d.user_info.auth==1) {
                         App.creds={h:h,u:u,p:p}; localStorage.setItem('rc_h', h); localStorage.setItem('rc_u', u); localStorage.setItem('rc_p', p); App.userInfo = d.user_info; var info = d.user_info;
-                        var exp = info.exp_date ? new Date(info.exp_date*1000).toLocaleDateString('pt-BR') : App.i18n[App.cfg.lang].unlimited; var conn = (info.active_cons || 0) + " / " + (info.max_connections || 1);
-                        var created = info.created_at ? new Date(info.created_at*1000).toLocaleDateString('pt-BR') : App.i18n[App.cfg.lang].unknown;
+                        var exp = info.exp_date ? new Date(info.exp_date*1000).toLocaleDateString('pt-BR') : App.i18n['pt'].unlimited; var conn = (info.active_cons || 0) + " / " + (info.max_connections || 1);
+                        var created = info.created_at ? new Date(info.created_at*1000).toLocaleDateString('pt-BR') : App.i18n['pt'].unknown;
                         document.getElementById('info-exp').innerText = exp; document.getElementById('info-conn').innerText = conn; document.getElementById('set-user').innerText = info.username || u; document.getElementById('set-exp').innerText = exp; document.getElementById('set-conn').innerText = (info.max_connections || 1); document.getElementById('set-created').innerText = created;
                         App.startSessionMonitor(); App.setScr(1); App.idx=0; App.updateFocus();
-                    } else { App.setScr(0); document.getElementById('msg-login').innerText = App.i18n[App.cfg.lang].err_auth; localStorage.clear(); }
+                    } else { App.setScr(0); document.getElementById('msg-login').innerText = App.i18n['pt'].err_auth; localStorage.clear(); }
                 });
             },
             logout: function() { PlayerEngine.hardStop(); localStorage.clear(); location.reload(); },
@@ -473,7 +475,7 @@
                         var item = App.globalData[i]; var cid = String(item.category_id);
                         if (App.cfg.filter) { if (!App.validCategories[cid]) continue; var nome = (item.name || item.title || "").toLowerCase(); var show = true; for(var j=0; j<junk.length; j++) { if(nome.indexOf(junk[j]) > -1) { show = false; break; } } if (show) count++; } else { count++; }
                     }
-                    var el = document.getElementById('item-count'); var t = App.i18n[App.cfg.lang]; var typeStr = App.currentMode === 'live' ? t.tot_chan : (App.currentMode === 'movie' ? t.tot_mov : t.tot_ser); if(el) el.innerText = t.tot_pre + count + " " + typeStr;
+                    var el = document.getElementById('item-count'); var t = App.i18n['pt']; var typeStr = App.currentMode === 'live' ? t.tot_chan : (App.currentMode === 'movie' ? t.tot_mov : t.tot_ser); if(el) el.innerText = t.tot_pre + count + " " + typeStr;
                 }
             },
 
@@ -481,7 +483,7 @@
                 this.fullData = []; this.globalData = null; document.getElementById('cat-list').innerHTML = ''; document.getElementById('item-list').innerHTML = '';
                 mode = mode || 'live'; App.currentMode = mode; PlayerEngine.hardStop(); this.resetInfo(); requestNativeFullscreen();
                 this.playingId = null; this.page = 0; this.validCategories = null; this.setScr(2);
-                var t = App.i18n[App.cfg.lang]; document.getElementById('search').value = ''; var countEl = document.getElementById('item-count'); if(countEl) countEl.innerText = t.tot_pre + "...";
+                var t = App.i18n['pt']; document.getElementById('search').value = ''; var countEl = document.getElementById('item-count'); if(countEl) countEl.innerText = t.tot_pre + "...";
                 var actionCat = mode === 'live' ? 'get_live_categories' : (mode === 'movie' ? 'get_vod_categories' : 'get_series_categories');
                 var actionStrm = mode === 'live' ? 'get_live_streams' : (mode === 'movie' ? 'get_vod_streams' : 'get_series');
 
@@ -506,7 +508,7 @@
             loadContent: function(catIdx) {
                 document.getElementById('item-list').innerHTML = ''; this.page = 0; this.lastCatIdx = catIdx; var el = document.getElementById('c'+catIdx); if(!el) return;
                 var cid = el.getAttribute('data-id'); var catItems = document.querySelectorAll('.cat-item'); for(var j=0; j<catItems.length; j++) { catItems[j].classList.remove('active'); } el.classList.add('active');
-                var t = App.i18n[App.cfg.lang]; document.getElementById('search').value = ''; document.getElementById('item-list').innerHTML = '<div style="padding:20px; text-align:center;">'+t.loading+'</div>';
+                var t = App.i18n['pt']; document.getElementById('search').value = ''; document.getElementById('item-list').innerHTML = '<div style="padding:20px; text-align:center;">'+t.loading+'</div>';
                 var actionStrm = App.currentMode === 'live' ? 'get_live_streams' : (App.currentMode === 'movie' ? 'get_vod_streams' : 'get_series');
 
                 var onData = function(d) { 
@@ -526,7 +528,7 @@
             },
 
             renderList: function(keepIdx) {
-                var d = this.fullData; var max = d.length; var t = App.i18n[App.cfg.lang]; var listEl = document.getElementById('item-list'); listEl.innerHTML = '';
+                var d = this.fullData; var max = d.length; var t = App.i18n['pt']; var listEl = document.getElementById('item-list'); listEl.innerHTML = '';
                 if(max===0) { listEl.innerHTML = '<div style="padding:20px; text-align:center;">'+t.empty+'</div>'; return; }
                 if(!keepIdx) { this.idx = 0; }
                 var currentPage = Math.floor(this.idx / this.pageSize); var start = currentPage * this.pageSize; var end = Math.min(start + this.pageSize, max);
@@ -552,7 +554,7 @@
             clickItem: function(forcePlay) { var item = this.fullData[this.idx]; if(item) { if (App.currentMode === 'series' && item.series_id && !item.is_episode) { App.loadEpisodes(item.series_id); } else { this.playStream(item); } } },
 
             loadEpisodes: function(series_id) {
-                App.seriesDataCache = App.fullData; App.lastSeriesIdx = App.idx; var t = App.i18n[App.cfg.lang]; document.getElementById('item-list').innerHTML = '<div style="padding:20px; text-align:center; color: var(--main-color);"><i class="fas fa-circle-notch fa-spin"></i> '+t.loading_ep+'</div>';
+                App.seriesDataCache = App.fullData; App.lastSeriesIdx = App.idx; var t = App.i18n['pt']; document.getElementById('item-list').innerHTML = '<div style="padding:20px; text-align:center; color: var(--main-color);"><i class="fas fa-circle-notch fa-spin"></i> '+t.loading_ep+'</div>';
                 this.req(this.creds.h+"/player_api.php?username="+this.creds.u+"&password="+this.creds.p+"&action=get_series_info&series_id="+series_id, function(d) {
                     if(d && d.episodes) {
                         var eps = [];
@@ -575,7 +577,7 @@
             },
 
             playStream: function(item) {
-                var id = item.stream_id || item.id; var url = ""; var t = App.i18n[App.cfg.lang];
+                var id = item.stream_id || item.id; var url = ""; var t = App.i18n['pt'];
                 if (App.currentMode === 'live') {
                     var ext = this.cfg.format === 'm3u8_native' ? 'm3u8' : 'ts'; 
                     url = this.creds.h+"/live/"+this.creds.u+"/"+this.creds.p+"/"+id+"."+ext;
