@@ -105,8 +105,6 @@
         video { width: 100%; height: 100%; object-fit: contain; background: #000; z-index: 1; transform: translateZ(0); }
         #vid-box.fs video { object-fit: fill !important; } /* Cobre a tela toda no modo Maratona/Filme */
 
-        #freeze-frame { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 5; display: none; object-fit: fill; pointer-events: none; }
-
         .buffer-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 50; display: none; flex-direction: column; align-items: center; justify-content: center; }
         .buffer-msg { color: #fff; font-weight: 900; margin-top: 15px; font-size: 2.5vh; text-shadow: 2px 2px 4px #000; }
 
@@ -218,8 +216,6 @@
                     <video id="player" playsinline webkit-playsinline></video>
                 </div>
 
-                <canvas id="freeze-frame"></canvas>
-                
                 <div id="smart-buffer" class="buffer-overlay">
                     <i class="fas fa-sync fa-spin" style="font-size: 5vh; color: var(--main-color);"></i>
                     <div class="buffer-msg" id="buffer-text">SINTONIZANDO...</div>
@@ -243,7 +239,7 @@
     </div>
 
     <script>
-        /* === MOTOR HÍBRIDO MAX PRO 24/7 - ANTI-TELA PRETA (PHILCO) E MODO MARATONA === */
+        /* === MOTOR HÍBRIDO MAX PRO 24/7 - LIMPEZA NUCLEAR DE RAM === */
         
         function safePlay(vidElement) {
             if (!vidElement) return;
@@ -274,45 +270,25 @@
 
         var PlayerEngine = {
             video: null, url: null, monitorTimer: null, lastTime: 0, stallCount: 0, 
-            retryCount: 0, maxRetries: 5, liveMaxRetries: 999999, isBuffering: false,
+            retryCount: 0, maxRetries: 3, liveMaxRetries: 99, isBuffering: false,
 
             init: function() { this.bindVideo(); },
-
-            /* CONGELAMENTO DE FRAME - Evita tela preta durante a queda de sinal na Philco */
-            freezeFrame: function() {
-                var v = document.getElementById('player');
-                var c = document.getElementById('freeze-frame');
-                if(v && c && v.videoWidth > 0) {
-                    try {
-                        c.width = v.videoWidth; c.height = v.videoHeight;
-                        var ctx = c.getContext('2d');
-                        ctx.drawImage(v, 0, 0, c.width, c.height);
-                        if(c.width > 0) { c.style.display = 'block'; }
-                    } catch(e) {}
-                }
-            },
-            
-            clearFreeze: function() {
-                var c = document.getElementById('freeze-frame');
-                if(c) { c.style.display = 'none'; try { c.getContext('2d').clearRect(0, 0, c.width, c.height); } catch(e){} }
-            },
 
             bindVideo: function() {
                 this.video = document.getElementById('player');
                 if(!this.video) return;
                 
                 this.video.onended = function() { 
-                    /* MODO MARATONA - Pula pro próximo episódio automaticamente */
                     if (App.currentMode === 'series' && App.fullData && App.fullData[App.idx] && App.fullData[App.idx].is_episode) {
                         var nextIdx = App.idx + 1;
                         if (nextIdx < App.fullData.length) { 
-                            PlayerEngine.hardStop(false, true); // Limpa memória do decodificador
+                            PlayerEngine.hardStop();
                             PlayerEngine.showBuffer('PRÓXIMO EPISÓDIO...');
-                            setTimeout(function() { App.itemClick(nextIdx); }, 1500); 
+                            setTimeout(function() { App.itemClick(nextIdx); }, 1000); 
                             return; 
                         }
                     }
-                    if(App.currentMode !== 'live') PlayerEngine.hardStop(false, true);
+                    if(App.currentMode !== 'live') PlayerEngine.hardStop();
                     else PlayerEngine.handleError(false); 
                 };
                 
@@ -322,27 +298,19 @@
                 this.video.controls = false; this.video.setAttribute('playsinline', 'true');
             },
 
-            resetDOM: function() {
-                var container = document.getElementById('player-container');
-                if(container) {
-                    var oldVid = document.getElementById('player');
-                    if(oldVid) { oldVid.onerror = null; oldVid.onended = null; oldVid.pause(); oldVid.removeAttribute('src'); oldVid.load(); container.removeChild(oldVid); }
-                    container.innerHTML = ''; 
-                    var newVid = document.createElement('video');
-                    newVid.id = 'player'; newVid.style.width = '100%'; newVid.style.height = '100%'; newVid.style.objectFit = 'contain'; newVid.style.background = '#000'; newVid.style.transform = 'translateZ(0)'; newVid.playsInline = true; newVid.webkitPlaysInline = true;
-                    container.appendChild(newVid); this.bindVideo();
+            /* Limpeza Agressiva de Memória (Sem recriar DOM para poupar a CPU da Philco) */
+            limparMemoriaDecoder: function() {
+                if(this.video) {
+                    this.video.pause();
+                    this.video.removeAttribute('src');
+                    try { this.video.load(); } catch(e) {}
                 }
             },
 
             play: function(url) {
                 if(this.url === url && this.video && !this.video.paused) return;
-                var isRetry = (this.url === url);
                 
-                if(!isRetry) { 
-                    this.clearFreeze(); 
-                    if (App.currentMode === 'live') { this.resetDOM(); } 
-                    else { if (this.video) { this.video.pause(); } }
-                } else { this.hardStop(true, false); }
+                this.limparMemoriaDecoder(); // Zera o decoder físico da TV antes de tocar o novo
                 
                 this.url = url; this.stallCount = 0; this.retryCount = 0;
                 this.showBuffer('CONECTANDO SINAL...'); document.getElementById('pause-layer').style.display = 'none';
@@ -350,11 +318,10 @@
                 
                 if(!this.video) return; 
                 this.video.src = url; 
-                if (App.currentMode !== 'live' && !isRetry) { try { this.video.load(); } catch(e) {} }
                 safePlay(this.video);
             },
 
-            onPlaySuccess: function() { this.stallCount = 0; this.retryCount = 0; this.clearFreeze(); this.hideBuffer(); },
+            onPlaySuccess: function() { this.stallCount = 0; this.retryCount = 0; this.hideBuffer(); },
 
             showBuffer: function(msg) {
                 this.isBuffering = true;
@@ -370,8 +337,7 @@
                     var v = PlayerEngine.video; if(!v || !PlayerEngine.url || v.paused) return;
                     if(Math.abs(v.currentTime - PlayerEngine.lastTime) < 0.1) {
                         PlayerEngine.stallCount++;
-                        if(PlayerEngine.stallCount > 3) { PlayerEngine.showBuffer('SINAL INSTÁVEL...'); }
-                        if(PlayerEngine.stallCount > 8) { PlayerEngine.stallCount = 0; PlayerEngine.handleError(true); }
+                        if(PlayerEngine.stallCount > 5) { PlayerEngine.stallCount = 0; PlayerEngine.handleError(true); }
                     } else { PlayerEngine.stallCount = 0; PlayerEngine.lastTime = v.currentTime; if(PlayerEngine.isBuffering) PlayerEngine.hideBuffer(); }
                 }, 2000);
             },
@@ -383,31 +349,27 @@
 
                 if (this.retryCount < limit) {
                     this.retryCount++;
-                    this.showBuffer('RECONECTANDO (' + this.retryCount + ')...');
-
-                    if(this.retryCount > 2 || isStall) { this.freezeFrame(); this.resetDOM(); }
-                    
-                    var delay = 1500; if(this.retryCount > 4) delay = 4000;
-                    setTimeout(function() { PlayerEngine.play(PlayerEngine.url); }, delay);
+                    this.showBuffer('RECONECTANDO...');
+                    this.limparMemoriaDecoder(); // Tenta salvar a RAM antes de reconectar
+                    setTimeout(function() { PlayerEngine.play(PlayerEngine.url); }, 2000);
                 } else {
-                    this.clearFreeze(); this.hardStop(false, true); this.showBuffer('FALHA NO SINAL.');
+                    this.hardStop(); this.showBuffer('FALHA NO SINAL.');
                 }
             },
 
-            hardReset: function() { if(!this.url) return; var currentUrl = this.url; this.hardStop(false, true); this.retryCount = 0; setTimeout(function() { PlayerEngine.play(currentUrl); }, 500); },
+            hardReset: function() { if(!this.url) return; var currentUrl = this.url; this.hardStop(); this.retryCount = 0; setTimeout(function() { PlayerEngine.play(currentUrl); }, 500); },
             
-            hardStop: function(isRetry, resetDOM) { 
+            hardStop: function() { 
                 this.stopMonitor(); 
-                if(this.video && !isRetry) { this.video.onerror = null; this.video.pause(); this.video.removeAttribute('src'); try { this.video.load(); } catch(e){} } 
-                if(resetDOM) { this.resetDOM(); }
-                if(!isRetry) { this.clearFreeze(); this.url = null; this.hideBuffer(); }
+                this.limparMemoriaDecoder();
+                this.url = null; this.hideBuffer(); 
             }
         };
 
         var App = {
             validCategories: null, scr: 0, zone: 0, idx: 0, lastCatIdx: 0, creds: {}, fullData: [], globalData: null, playingId: null,
             cfg: { filter: false, format: 'ts_native', lang: 'pt' }, userInfo: null, lastEnter: 0, touchTimer: null,
-            seriesDataCache: null, lastSeriesIdx: 0, sessionStartTime: null, refreshInterval: 6 * 60 * 60 * 1000, refreshTimer: null,
+            seriesDataCache: null, lastSeriesIdx: 0, sessionStartTime: null, refreshInterval: 4 * 60 * 60 * 1000, refreshTimer: null,
             lastTap: 0, tapTimer: null, pageSize: 60, mobileRenderedPages: 1, 
 
             pad: function(n) { return (n < 10) ? ("0" + n) : n; },
@@ -451,7 +413,7 @@
             
             performAutoRefresh: function() { 
                 if (App.currentMode === 'live' && App.playingId) { 
-                    PlayerEngine.resetDOM(); PlayerEngine.hardReset(); App.sessionStartTime = Date.now(); 
+                    PlayerEngine.hardReset(); App.sessionStartTime = Date.now(); 
                     if (App.refreshTimer) { clearTimeout(App.refreshTimer); } 
                     App.refreshTimer = setTimeout(function() { App.performAutoRefresh(); }, App.refreshInterval); 
                 } else if ((App.currentMode === 'movie' || App.currentMode === 'series') && App.playingId && PlayerEngine.video && !PlayerEngine.video.paused) { 
@@ -459,7 +421,7 @@
                     if (App.refreshTimer) { clearTimeout(App.refreshTimer); } 
                     App.refreshTimer = setTimeout(function() { App.performAutoRefresh(); }, 30 * 60 * 1000); 
                 } else { 
-                    PlayerEngine.hardStop(false, true); localStorage.removeItem('rc_session_start'); localStorage.removeItem('rc_refresh_interval'); 
+                    PlayerEngine.hardStop(); localStorage.removeItem('rc_session_start'); localStorage.removeItem('rc_refresh_interval'); 
                     setTimeout(function() { location.reload(); }, 500); 
                 } 
             },
@@ -491,10 +453,10 @@
                     } else { App.setScr(0); document.getElementById('msg-login').innerText = App.i18n[App.cfg.lang].err_auth; localStorage.clear(); }
                 });
             },
-            logout: function() { PlayerEngine.hardStop(false, true); localStorage.clear(); location.reload(); },
+            logout: function() { PlayerEngine.hardStop(); localStorage.clear(); location.reload(); },
 
             setScr: function(n) {
-                if(n===1) { PlayerEngine.hardStop(false, true); }
+                if(n===1) { PlayerEngine.hardStop(); }
                 var layers = document.querySelectorAll('.layer'); for(var i=0; i<layers.length; i++) { layers[i].classList.add('hide'); }
                 if(n===0) document.getElementById('login-layer').classList.remove('hide'); if(n===1) document.getElementById('dash-layer').classList.remove('hide');
                 if(n===2) { document.getElementById('content-layer').classList.remove('hide'); document.getElementById('btn-back').classList.remove('hide'); this.page = 0; } else { var btn = document.getElementById('btn-back'); if(btn) btn.classList.add('hide'); }
@@ -517,7 +479,7 @@
 
             openMode: function(mode) {
                 this.fullData = []; this.globalData = null; document.getElementById('cat-list').innerHTML = ''; document.getElementById('item-list').innerHTML = '';
-                mode = mode || 'live'; App.currentMode = mode; PlayerEngine.hardStop(false, true); this.resetInfo(); requestNativeFullscreen();
+                mode = mode || 'live'; App.currentMode = mode; PlayerEngine.hardStop(); this.resetInfo(); requestNativeFullscreen();
                 this.playingId = null; this.page = 0; this.validCategories = null; this.setScr(2);
                 var t = App.i18n[App.cfg.lang]; document.getElementById('search').value = ''; var countEl = document.getElementById('item-count'); if(countEl) countEl.innerText = t.tot_pre + "...";
                 var actionCat = mode === 'live' ? 'get_live_categories' : (mode === 'movie' ? 'get_vod_categories' : 'get_series_categories');
@@ -538,7 +500,7 @@
                 this.req(this.creds.h+"/player_api.php?username="+this.creds.u+"&password="+this.creds.p+"&action="+actionStrm, function(d){ if(d && d!=='ERR_NET') { App.globalData = d; App.countGlobal(); } });
             },
             
-            resetInfo: function() { document.getElementById('meta-title').innerHTML = '<span style="color:#fff">IPTV</span>&nbsp;MAX PRO'; document.getElementById('meta-desc').innerText = "Modo Maratona Ativado"; var v = document.getElementById('player'); if(v){v.removeAttribute('src'); v.load();} document.getElementById('pause-layer').style.display = 'none'; PlayerEngine.clearFreeze(); },
+            resetInfo: function() { document.getElementById('meta-title').innerHTML = '<span style="color:#fff">IPTV</span>&nbsp;MAX PRO'; document.getElementById('meta-desc').innerText = "Modo Maratona Ativado"; var v = document.getElementById('player'); if(v){v.removeAttribute('src'); v.load();} document.getElementById('pause-layer').style.display = 'none'; },
             catClick: function(i) { this.idx=i; this.zone=0; this.loadContent(i); requestNativeFullscreen(); },
 
             loadContent: function(catIdx) {
@@ -743,7 +705,7 @@
             if(k===406||k===66||k===275) { e.preventDefault(); App.setScr(1); } 
         });
 
-        function forceDisconnect() { PlayerEngine.hardStop(false, true); }
+        function forceDisconnect() { PlayerEngine.hardStop(); }
         window.addEventListener('beforeunload', forceDisconnect); window.addEventListener('unload', forceDisconnect); window.addEventListener('pagehide', forceDisconnect);
         document.addEventListener('visibilitychange', function() { if (document.visibilityState === 'hidden') { forceDisconnect(); } });
     </script>
