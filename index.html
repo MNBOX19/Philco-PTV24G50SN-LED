@@ -104,6 +104,7 @@
         .cat-top-row { display: flex; align-items: center; width: 100%; }
         .btn-voltar { width: 4vh; height: 4vh; border-radius: 50%; border: 2px solid var(--red-ferrari); display: flex; align-items: center; justify-content: center; font-size: var(--font-sm); margin-right: 1vw; color: var(--red-ferrari); }
         
+        /* PROTEÇÃO ANTI-QUEBRA DE LAYOUT PARA NOMES LONGOS */
         .cat-item, .item { padding: 14px 20px; border-radius: 6px; margin: 6px 12px; color: #888; font-size: var(--font-sm); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid transparent; }
         .cat-item.active { background: #1a1a1a; color: #fff; border-left: 4px solid var(--red-ferrari); }
         
@@ -259,7 +260,7 @@
     </div>
 
     <script>
-        /* === MOTOR MAX PRO V12 (BASE ENTERPRISE) - OTIMIZADO PARA TV PHILCO 24H === */
+        /* === MOTOR MAX PRO V12 (LAZY LOAD + ANTI-TELA PRETA) - OTIMIZADO PARA TV PHILCO 24H === */
         
         function safePlay(vidElement) {
             if (!vidElement) return;
@@ -294,7 +295,7 @@
 
             init: function() { this.bindVideo(); },
 
-            /* SISTEMA DE CONGELAMENTO DE FRAME - Tira uma foto milissegundos antes da queda */
+            /* SISTEMA DE CONGELAMENTO DE FRAME */
             freezeFrame: function() {
                 var v = document.getElementById('player');
                 var c = document.getElementById('freeze-frame');
@@ -435,7 +436,7 @@
         };
 
         var App = {
-            validCategories: null, scr: 0, zone: 0, idx: 0, lastCatIdx: 0, creds: {}, fullData: [], globalData: null, playingId: null,
+            validCategories: null, scr: 0, zone: 0, idx: 0, lastCatIdx: 0, creds: {}, fullData: [], playingId: null,
             cfg: { filter: false, format: 'ts_native', lang: 'pt' }, userInfo: null, lastEnter: 0, touchTimer: null,
             seriesDataCache: null, lastSeriesIdx: 0, sessionStartTime: null, refreshInterval: 4 * 60 * 60 * 1000, refreshTimer: null,
             lastTap: 0, tapTimer: null, pageSize: 60, mobileRenderedPages: 1, 
@@ -480,7 +481,6 @@
                     if (App.refreshTimer) { clearTimeout(App.refreshTimer); } 
                     App.refreshTimer = setTimeout(function() { App.performAutoRefresh(); }, App.refreshInterval); 
                 } else if ((App.currentMode === 'movie' || App.currentMode === 'series') && App.playingId && PlayerEngine.video && !PlayerEngine.video.paused) { 
-                    /* INTELIGÊNCIA VOD: Adia o reload silenciosamente em 30 min se estiver assistindo */
                     if (App.refreshTimer) { clearTimeout(App.refreshTimer); } 
                     App.refreshTimer = setTimeout(function() { App.performAutoRefresh(); }, 30 * 60 * 1000); 
                 } else { 
@@ -528,24 +528,16 @@
 
             openSettings: function() { this.setScr(3); this.idx = 0; this.updateFocus(); requestNativeFullscreen(); }, closeSettings: function() { this.setScr(1); this.idx=3; this.updateFocus(); },
 
-            countGlobal: function() {
-                if (App.globalData && App.validCategories !== null) {
-                    var count = 0; var junk = ['adulto','xxx','sex','porn','+18','teste','off','expirado','vencido'];
-                    for(var i=0; i<App.globalData.length; i++) {
-                        var item = App.globalData[i]; var cid = String(item.category_id);
-                        if (App.cfg.filter) { if (!App.validCategories[cid]) continue; var nome = (item.name || item.title || "").toLowerCase(); var show = true; for(var j=0; j<junk.length; j++) { if(nome.indexOf(junk[j]) > -1) { show = false; break; } } if (show) count++; } else { count++; }
-                    }
-                    var el = document.getElementById('item-count'); var t = App.i18n['pt']; var typeStr = App.currentMode === 'live' ? t.tot_chan : (App.currentMode === 'movie' ? t.tot_mov : t.tot_ser); if(el) el.innerText = t.tot_pre + count + " " + typeStr;
-                }
-            },
-
             openMode: function(mode) {
-                this.fullData = []; this.globalData = null; document.getElementById('cat-list').innerHTML = ''; document.getElementById('item-list').innerHTML = '';
+                /* CARREGAMENTO SOB DEMANDA (LAZY LOAD) - ALIVIA MEMÓRIA DA TV */
+                this.fullData = []; document.getElementById('cat-list').innerHTML = ''; document.getElementById('item-list').innerHTML = '';
                 mode = mode || 'live'; App.currentMode = mode; PlayerEngine.hardStop(); this.resetInfo(); requestNativeFullscreen();
                 this.playingId = null; this.page = 0; this.validCategories = null; this.setScr(2);
-                var t = App.i18n['pt']; document.getElementById('search').value = ''; var countEl = document.getElementById('item-count'); if(countEl) countEl.innerText = t.tot_pre + "...";
+                
+                var t = App.i18n['pt']; document.getElementById('search').value = ''; 
+                var countEl = document.getElementById('item-count'); if(countEl) countEl.innerText = "CARREGANDO...";
+                
                 var actionCat = mode === 'live' ? 'get_live_categories' : (mode === 'movie' ? 'get_vod_categories' : 'get_series_categories');
-                var actionStrm = mode === 'live' ? 'get_live_streams' : (mode === 'movie' ? 'get_vod_streams' : 'get_series');
 
                 this.req(this.creds.h+"/player_api.php?username="+this.creds.u+"&password="+this.creds.p+"&action="+actionCat, function(d){
                     if(d && d!=='ERR_NET') {
@@ -556,10 +548,12 @@
                             if(App.cfg.filter) { var lower = nome.toLowerCase(); for(var j=0; j<junk.length; j++) { if(lower.indexOf(junk[j]) > -1) { show = false; break; } } }
                             if(show) { count++; h.push('<div class="cat-item" role="button" tabindex="-1" id="c'+count+'" data-id="'+d[i].category_id+'" onclick="App.catClick('+count+')">'+nome+'</div>'); App.validCategories[String(d[i].category_id)] = true; }
                         }
-                        document.getElementById('cat-list').innerHTML = h.join(''); App.zone=0; App.idx=0; App.updateFocus(); App.countGlobal();
+                        document.getElementById('cat-list').innerHTML = h.join(''); App.zone=0; App.idx=0; App.updateFocus(); 
+                        if(countEl) countEl.innerText = count + " CATEGORIAS";
+                    } else {
+                        if(countEl) countEl.innerText = "ERRO DE REDE";
                     }
                 });
-                this.req(this.creds.h+"/player_api.php?username="+this.creds.u+"&password="+this.creds.p+"&action="+actionStrm, function(d){ if(d && d!=='ERR_NET') { App.globalData = d; App.countGlobal(); } });
             },
             
             resetInfo: function() { document.getElementById('meta-title').innerHTML = '<span style="color:#fff">IPTV</span>&nbsp;MAX PRO'; document.getElementById('meta-desc').innerText = ""; var v = document.getElementById('player'); if(v){v.removeAttribute('src'); v.load();} document.getElementById('pause-layer').style.display = 'none'; PlayerEngine.clearFreeze(); },
@@ -579,11 +573,28 @@
                             for(var k=0; k<d.length; k++) { var nome = (d[k].name || d[k].title || "").toLowerCase(); var show = true; for(var j=0; j<junk.length; j++) { if(nome.indexOf(junk[j]) > -1) { show = false; break; } } if(show) res.push(d[k]); }
                             App.fullData = res;
                         } else { App.fullData = d; }
+                        
+                        var countEl = document.getElementById('item-count'); 
+                        var typeStr = App.currentMode === 'live' ? t.tot_chan : (App.currentMode === 'movie' ? t.tot_mov : t.tot_ser); 
+                        if(countEl) countEl.innerText = App.fullData.length + " " + typeStr;
+
                         App.renderList(); 
                     } else { document.getElementById('item-list').innerHTML = '<div style="padding:20px; text-align:center;">'+t.empty+'</div>'; }
                 };
 
-                if(cid === 'fav') { this.req(this.creds.h+"/player_api.php?username="+this.creds.u+"&password="+this.creds.p+"&action="+actionStrm, function(d){ if(d && d!=='ERR_NET') { var favs = d.filter(function(x){ var fId = x.stream_id || x.series_id || x.id; return FavManager.isFav(fId); }); App.fullData = favs; App.renderList(); } }); } 
+                if(cid === 'fav') { 
+                    this.req(this.creds.h+"/player_api.php?username="+this.creds.u+"&password="+this.creds.p+"&action="+actionStrm, function(d){ 
+                        if(d && d!=='ERR_NET') { 
+                            var favs = d.filter(function(x){ var fId = x.stream_id || x.series_id || x.id; return FavManager.isFav(fId); }); 
+                            App.fullData = favs; 
+                            var countEl = document.getElementById('item-count'); 
+                            if(countEl) countEl.innerText = App.fullData.length + " SALVOS";
+                            App.renderList(); 
+                        } else {
+                            document.getElementById('item-list').innerHTML = '<div style="padding:20px; text-align:center;">'+t.empty+'</div>';
+                        }
+                    }); 
+                } 
                 else { this.req(this.creds.h+"/player_api.php?username="+this.creds.u+"&password="+this.creds.p+"&action="+actionStrm+"&category_id="+cid, onData); }
             },
 
@@ -742,7 +753,7 @@
                 var now = new Date().getTime(); if(now - this.lastEnter < 400) return; this.lastEnter = now;
                 if(this.scr===0) { if(this.idx === 3) this.login(false); else if(this.idx < 3) this.move(1); }
                 if(this.scr===1) { if(this.idx === 4) this.logout(); else if(this.idx === 3) this.openSettings(); else if(this.idx === 0) this.openMode('live'); else if(this.idx === 1) this.openMode('movie'); else if(this.idx === 2) this.openMode('series'); }
-                if(this.scr===3) { if(this.idx === 1) { /* Idioma fixo em PT para economizar RAM */ } if(this.idx === 2) this.toggleCfg('filter'); if(this.idx === 3) this.toggleFormat(); if(this.idx === 4) this.closeSettings(); }
+                if(this.scr===3) { if(this.idx === 1) { /* Idioma fixo em PT */ } if(this.idx === 2) this.toggleCfg('filter'); if(this.idx === 3) this.toggleFormat(); if(this.idx === 4) this.closeSettings(); }
                 if(this.scr===2) { if(this.zone===0) this.catClick(this.idx); if(this.zone===1) this.doSearch(); if(this.zone===2) { App.clickItem(); } if(this.zone===3) this.toggleFull(); }
             }
         };
