@@ -24,11 +24,11 @@
             -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none;           
         }
         
-        /* OTIMIZAÇÃO EXTREMA PARA HARDWARE LIMITADO (PHILCO/AOC/ROKU) */
+        /* OTIMIZAÇÃO E TRAVA DE TELA ESTATICA */
         html, body {
             background: #000000; color: #ffffff; font-family: 'Montserrat', sans-serif;
             position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-            overflow: hidden !important;
+            overflow: hidden !important; overscroll-behavior: none; touch-action: none;
         }
 
         .hide { display: none !important; }
@@ -37,7 +37,7 @@
 
         button, .smart-card, .cat-item, .item, .power-btn, .key, .toggle-btn { cursor: pointer; }
         
-        .cat-list, .item-list, .meta { overflow-y: auto; -webkit-overflow-scrolling: touch; will-change: transform; transform: translateZ(0); }
+        .cat-list, .item-list, .meta { overflow-y: auto; -webkit-overflow-scrolling: touch; will-change: transform; transform: translateZ(0); touch-action: pan-y; }
 
         .focused { 
             border: 3px solid #fff !important; background: var(--main-color) !important; color: #fff !important; 
@@ -66,7 +66,6 @@
         .clock-time { font-size: 6vh; font-weight: 700; color: #eee; line-height: 1; }
         .clock-date { font-size: 2.5vh; color: #ccc; font-weight: 600; margin-top: 0.8vh; }
         
-        /* ANIMAÇÃO DOS BOTÕES DE CONFIGURAÇÃO E DESLIGAR */
         @keyframes pulse-btn {
             0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 40, 0, 0.4); }
             50% { transform: scale(1.15); box-shadow: 0 0 20px 5px rgba(255, 40, 0, 0.8); }
@@ -104,7 +103,6 @@
         .item.playing { color: var(--main-color); background: #111; border-left: 4px solid var(--main-color); }
         .fav-icon { float: right; color: var(--main-color); }
 
-        /* PLAYER 10/10 - HARDWARE ACCEL */
         .vid-box { 
             width: 100%; height: 50vh; background: #000; position: relative; border-bottom: 2px solid #222; overflow: hidden; 
             touch-action: manipulation; transform: translateZ(0); 
@@ -247,8 +245,6 @@
     </div>
 
     <script>
-        /* === MOTOR EMPRESARIAL 24/7 MAX - ANTI-TELA PRETA E OTIMIZADO PARA MEDIATEK/PHILCO === */
-        
         function safePlay(vidElement) {
             if (!vidElement) return;
             try { 
@@ -291,7 +287,7 @@
                         var ctx = c.getContext('2d');
                         ctx.drawImage(v, 0, 0, c.width, c.height);
                         if(c.width > 0) { c.style.display = 'block'; }
-                    } catch(e) { console.log("Erro ao salvar frame:", e); }
+                    } catch(e) { console.log("Erro frame:", e); }
                 }
             },
             
@@ -555,7 +551,11 @@
             
             resetInfo: function() { document.getElementById('meta-title').innerHTML = '<span style="color:#fff">IPTV</span>&nbsp;MAX PRO'; document.getElementById('meta-desc').innerText = ""; var v = document.getElementById('player'); if(v){v.removeAttribute('src'); v.load();} document.getElementById('pause-layer').style.display = 'none'; PlayerEngine.clearFreeze(); },
             
-            catClick: function(i) { this.idx=i; this.zone=0; this.loadContent(i); },
+            catClick: function(i) { 
+                this.idx=i; this.zone=0; // FIX 2: Mantém o foco na categoria (zona 0) para o usuário não perder controle
+                this.loadContent(i); 
+                this.updateFocus(); 
+            },
 
             loadContent: function(catIdx) {
                 document.getElementById('item-list').innerHTML = ''; this.page = 0; this.lastCatIdx = catIdx; var el = document.getElementById('c'+catIdx); if(!el) return;
@@ -577,7 +577,7 @@
                         var countEl = document.getElementById('item-count'); 
                         if(countEl) countEl.innerText = t.tot_pre + App.fullData.length;
 
-                        App.renderList(); 
+                        App.renderList(); // A renderização não muda mais a zona automaticamente
                     } else { document.getElementById('item-list').innerHTML = '<div style="padding:20px; text-align:center;">'+t.empty+'</div>'; }
                 };
 
@@ -614,9 +614,13 @@
                 var h = [];
                 for(var i = start; i < end; i++) {
                     var n = d[i].name || d[i].title; var id = d[i].stream_id || d[i].series_id || d[i].id; var icn = FavManager.isFav(id) ? '<i class="fas fa-star fav-icon"></i>' : '';
-                    h.push('<div class="item" role="button" tabindex="-1" id="row-'+i+'" onclick="App.itemClick('+i+')">'+n+icn+'</div>');
+                    
+                    // FIX 4: Marcação nunca mais some! Sempre que recriar o DOM verifica se este era o item que estava tocando.
+                    var playingClass = (App.playingId == id) ? ' playing' : ''; 
+                    h.push('<div class="item' + playingClass + '" role="button" tabindex="-1" id="row-'+i+'" onclick="App.itemClick('+i+')">'+n+icn+'</div>');
                 }
-                listEl.innerHTML = h.join(''); this.mobileRenderedPages = currentPage + 1; this.zone = 2; this.updateFocus();
+                listEl.innerHTML = h.join(''); this.mobileRenderedPages = currentPage + 1; 
+                // ZONA NUNCA É ALTERADA AQUI (Fix barra de busca sumindo)
             },
 
             loadMoreMobile: function() {
@@ -624,7 +628,8 @@
                 var end = Math.min(start + this.pageSize, max); var h = [];
                 for(var i = start; i < end; i++) {
                     var n = this.fullData[i].name || this.fullData[i].title; var id = this.fullData[i].stream_id || this.fullData[i].series_id || this.fullData[i].id; var icn = FavManager.isFav(id) ? '<i class="fas fa-star fav-icon"></i>' : '';
-                    h.push('<div class="item" role="button" tabindex="-1" id="row-'+i+'" onclick="App.itemClick('+i+')">'+n+icn+'</div>');
+                    var playingClass = (App.playingId == id) ? ' playing' : ''; 
+                    h.push('<div class="item' + playingClass + '" role="button" tabindex="-1" id="row-'+i+'" onclick="App.itemClick('+i+')">'+n+icn+'</div>');
                 }
                 document.getElementById('item-list').insertAdjacentHTML('beforeend', h.join('')); this.mobileRenderedPages++;
             },
@@ -654,7 +659,7 @@
                             }
                         }
                         eps.sort(function(a, b) { if (a.season_num !== b.season_num) { return a.season_num - b.season_num; } return a.episode_real_num - b.episode_real_num; });
-                        App.fullData = eps; App.zone = 2; App.idx = 0; App.renderList();
+                        App.fullData = eps; App.renderList(); App.zone = 2; App.idx = 0; App.updateFocus(); // Pula para episódios automaticamente
                     } else { document.getElementById('item-list').innerHTML = '<div style="padding:20px; text-align:center;">'+t.no_ep+'</div>'; }
                 };
 
@@ -690,14 +695,12 @@
             syncFocusToPlaying: function() { if(!this.playingId) return; for(var i=0; i<this.fullData.length; i++) { var id = this.fullData[i].stream_id || this.fullData[i].series_id || this.fullData[i].id; if(id == this.playingId) { this.idx = i; this.updateFocus(); return; } } },
             removeAccents: function(s) { if(!s) return ""; var str = s.toLowerCase(); str = str.replace(/[áàãâä]/g, 'a'); str = str.replace(/[éèêë]/g, 'e'); str = str.replace(/[íìîï]/g, 'i'); str = str.replace(/[óòõôö]/g, 'o'); str = str.replace(/[úùûü]/g, 'u'); str = str.replace(/[ç]/g, 'c'); return str; },
 
-            // Motor para buscar localmente enquanto digita
             triggerSearch: function(e) {
-                if(e && e.keyCode === 13) return; // Se dar Enter, o evento keydown assume para Busca Global
+                if(e && e.keyCode === 13) return; // Enter
                 if(App.searchTimer) clearTimeout(App.searchTimer);
                 App.searchTimer = setTimeout(function() { App.doSearch(false); }, 600);
             },
 
-            // BUSCA HÍBRIDA (Local Rápida vs Global Profunda)
             doSearch: function(isGlobal) {
                 var rawT = document.getElementById('search').value; 
                 if(rawT.length === 0) { 
@@ -710,7 +713,6 @@
                 var listEl = document.getElementById('item-list');
                 
                 if (isGlobal) {
-                    // == BUSCA GLOBAL NO SERVIDOR INTEIRO ==
                     listEl.innerHTML = '<div style="padding:20px; text-align:center; color: var(--main-color); font-size: 2vh;"><i class="fas fa-circle-notch fa-spin" style="font-size: 5vh; margin-bottom: 15px;"></i><br><br>BUSCANDO NO CATÁLOGO GLOBAL...</div>';
                     var actionStrm = App.currentMode === 'live' ? 'get_live_streams' : (App.currentMode === 'movie' ? 'get_vod_streams' : 'get_series');
                     
@@ -722,19 +724,18 @@
                                 if(App.cfg.filter) { var lowerNome = nome.toLowerCase(); for(var j=0; j<junk.length; j++) { if(lowerNome.indexOf(junk[j]) > -1) { show = false; break; } } }
                                 if(show && App.removeAccents(nome).indexOf(tStr) > -1) { res.push(d[i]); if(res.length >= maxResults) break; } 
                             }
-                            d = null; // Limpa o arquivo gigante da memória RAM da TV imediatamente
+                            d = null; // Limpa da RAM
                             
                             if (res.length > 0) {
-                                res.sort(App.smartSort); App.fullData = res; App.page = 0; App.renderList(); App.zone = 2; App.idx = 0; App.updateFocus(); 
+                                res.sort(App.smartSort); App.fullData = res; App.page = 0; App.renderList(); App.zone = 2; App.idx = 0; App.updateFocus(); // Busca global joga foco pra lista
                             } else {
-                                listEl.innerHTML = '<div style="padding:20px; text-align:center;">Nenhum resultado encontrado em todo o servidor.</div>';
+                                listEl.innerHTML = '<div style="padding:20px; text-align:center;">Nenhum resultado encontrado no servidor global.</div>';
                             }
                         } else {
-                            listEl.innerHTML = '<div style="padding:20px; text-align:center;">Erro ao conectar com o servidor.</div>';
+                            listEl.innerHTML = '<div style="padding:20px; text-align:center;">Erro na conexão com o servidor.</div>';
                         }
                     });
                 } else {
-                    // == BUSCA LOCAL INSTANTÂNEA ==
                     listEl.innerHTML = '<div style="padding:20px; text-align:center; color: var(--main-color); font-size: 30px;"><i class="fas fa-circle-notch fa-spin"></i></div>';
                     setTimeout(function() {
                         var baseData = App.categoryDataCache || App.fullData;
@@ -752,9 +753,9 @@
                         }
                         
                         if (res.length > 0) {
-                            App.fullData = res; App.page = 0; App.renderList(); App.zone = 2; App.idx = 0; App.updateFocus(); 
+                            App.fullData = res; App.page = 0; App.renderList(); 
+                            // O FOCO É MANTIDO NO TECLADO LIVREMENTE AQUI!
                         } else {
-                            // Dica visual ensinando o usuário a apertar Enter para buscar globalmente
                             listEl.innerHTML = '<div style="padding:20px; text-align:center; font-size:1.8vh; color:#888;">Não encontrado nesta categoria.<br><br><b style="color:var(--main-color);">APERTE ENTER PARA BUSCA GLOBAL</b></div>';
                         }
                     }, 50);
@@ -791,7 +792,15 @@
                 
                 if(el) { 
                     el.classList.add('focused'); 
-                    if(el.tagName==='INPUT') { el.focus(); } else { var inps = document.querySelectorAll('input'); for(var i=0; i<inps.length; i++) { inps[i].blur(); } el.focus(); } 
+                    
+                    // FIX 3: Trava a rolagem na hora de focar a UI. Impede a tela do mobile de ficar pulando!
+                    if(el.tagName==='INPUT') { 
+                        try { el.focus({preventScroll:true}); } catch(e) { el.focus(); } 
+                    } else { 
+                        var inps = document.querySelectorAll('input'); for(var i=0; i<inps.length; i++) { inps[i].blur(); } 
+                        try { el.focus({preventScroll:true}); } catch(e) { el.focus(); } 
+                    } 
+                    
                     if(el.tagName!=='INPUT') {
                         var parentContainer = el.parentElement;
                         while(parentContainer && parentContainer !== document.body) {
@@ -834,12 +843,26 @@
 
         document.addEventListener('keydown', function(e) {
             var k=e.keyCode;
+            
+            // FIX 3: Impede o navegador de rolar a página toda vez que o botão direcional for pressionado
+            if([37, 38, 39, 40, 32].indexOf(k) > -1) {
+                if(document.activeElement && document.activeElement.tagName === 'INPUT') {
+                    if(k===38 || k===40) e.preventDefault(); // Deixa as setas esq/dir funcionarem pra editar texto!
+                } else {
+                    e.preventDefault(); 
+                }
+            }
+
             if(document.activeElement && document.activeElement.tagName === 'INPUT' && App.scr === 0) { if(k === 13 || k === 40) { e.preventDefault(); App.move(1); return; } if(k === 38) { e.preventDefault(); App.move(0); return; } return; }
+            
+            // FIX 1: Deixa a barra de pesquisa trabalhar livremente sem pular.
             if(App.scr === 2 && document.activeElement && document.activeElement.tagName === 'INPUT') { 
-                if(k === 13) { App.doSearch(true); return; } // APERTOU ENTER NA BUSCA: FAZ BUSCA GLOBAL
-                if(k === 40) { e.preventDefault(); App.zone=2; App.idx=0; App.updateFocus(); return; } 
+                if(k === 13) { App.doSearch(true); return; } // Global
+                if(k === 40) { e.preventDefault(); App.zone=2; App.idx=0; App.updateFocus(); return; } // Vai pros itens
+                if(k === 37 || k === 39) { return; } // Libera setas para mover cursor de texto!
                 return; 
             }
+            
             if(k===48 || k===96) { if(App.scr===2 && App.zone===2) { var it=App.fullData[App.idx]; if(it) { var itId = it.stream_id || it.series_id || it.id; FavManager.toggle(itId); } } }
             
             var isVOD = (App.currentMode !== 'live' && App.scr === 2); var isFull = document.getElementById('vid-box').classList.contains('fs');
