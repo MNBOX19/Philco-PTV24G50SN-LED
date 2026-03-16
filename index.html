@@ -212,7 +212,7 @@
         </div>
         
         <div class="col-list">
-            <div class="search-area"><input type="text" id="search" class="inp-search focusable" placeholder="BUSCAR..." autocomplete="off"></div>
+            <div class="search-area"><input type="text" id="search" class="inp-search focusable" placeholder="BUSCAR..." autocomplete="off" onkeyup="App.triggerSearch(event)"></div>
             <div id="item-list" class="item-list"></div>
         </div>
         
@@ -282,7 +282,6 @@
 
             init: function() { this.bindVideo(); },
 
-            /* SISTEMA DE CONGELAMENTO DE FRAME - Tira uma foto milissegundos antes da queda */
             freezeFrame: function() {
                 var v = document.getElementById('player');
                 var c = document.getElementById('freeze-frame');
@@ -291,7 +290,6 @@
                         c.width = v.videoWidth; c.height = v.videoHeight;
                         var ctx = c.getContext('2d');
                         ctx.drawImage(v, 0, 0, c.width, c.height);
-                        /* Proteção extra para Philco/MediaTek: Evita mostrar canvas se ele gerar tela preta nativa */
                         if(c.width > 0) { c.style.display = 'block'; }
                     } catch(e) { console.log("Erro ao salvar frame:", e); }
                 }
@@ -313,10 +311,7 @@
                     if (App.currentMode === 'series' && App.fullData && App.fullData[App.idx] && App.fullData[App.idx].is_episode) {
                         var nextIdx = App.idx + 1;
                         if (nextIdx < App.fullData.length) { 
-                            // Transição suave em série sem resetar player
-                            setTimeout(function() {
-                                App.itemClick(nextIdx);
-                            }, 50); 
+                            setTimeout(function() { App.itemClick(nextIdx); }, 50); 
                             return; 
                         }
                     }
@@ -432,6 +427,7 @@
         var App = {
             validCategories: null, scr: 0, zone: 0, idx: 0, lastCatIdx: 0, creds: {}, fullData: [], playingId: null,
             cfg: { filter: false, format: 'ts_native', lang: 'pt' }, userInfo: null, lastEnter: 0, touchTimer: null,
+            categoryDataCache: null, searchTimer: null,
             seriesDataCache: null, lastSeriesIdx: 0, sessionStartTime: null, refreshInterval: 4 * 60 * 60 * 1000, refreshTimer: null,
             lastTap: 0, tapTimer: null, pageSize: 60, mobileRenderedPages: 1, 
 
@@ -524,7 +520,7 @@
             openSettings: function() { this.setScr(3); this.idx = 0; this.updateFocus(); requestNativeFullscreen(); }, closeSettings: function() { this.setScr(1); this.idx=3; this.updateFocus(); },
 
             openMode: function(mode) {
-                this.fullData = []; document.getElementById('cat-list').innerHTML = ''; document.getElementById('item-list').innerHTML = '';
+                this.fullData = []; this.categoryDataCache = null; document.getElementById('cat-list').innerHTML = ''; document.getElementById('item-list').innerHTML = '';
                 mode = mode || 'live'; App.currentMode = mode; PlayerEngine.hardStop(); this.resetInfo(); requestNativeFullscreen();
                 this.playingId = null; this.page = 0; this.validCategories = null; this.setScr(2);
                 var t = App.i18n[App.cfg.lang]; document.getElementById('search').value = ''; 
@@ -545,7 +541,6 @@
                     if(App.zone===0 && App.idx===0) { App.updateFocus(); }
                 };
 
-                // SISTEMA STB: Checa o Cache primeiro para carregamento instantâneo
                 var cached = localStorage.getItem(cacheKey);
                 if(cached) { try { renderCats(JSON.parse(cached)); } catch(e){} }
 
@@ -559,7 +554,8 @@
             },
             
             resetInfo: function() { document.getElementById('meta-title').innerHTML = '<span style="color:#fff">IPTV</span>&nbsp;MAX PRO'; document.getElementById('meta-desc').innerText = ""; var v = document.getElementById('player'); if(v){v.removeAttribute('src'); v.load();} document.getElementById('pause-layer').style.display = 'none'; PlayerEngine.clearFreeze(); },
-            catClick: function(i) { this.idx=i; this.zone=0; this.loadContent(i); requestNativeFullscreen(); },
+            
+            catClick: function(i) { this.idx=i; this.zone=0; this.loadContent(i); },
 
             loadContent: function(catIdx) {
                 document.getElementById('item-list').innerHTML = ''; this.page = 0; this.lastCatIdx = catIdx; var el = document.getElementById('c'+catIdx); if(!el) return;
@@ -576,7 +572,8 @@
                             App.fullData = res;
                         } else { App.fullData = d; }
                         
-                        // Atualiza o total com base SÓ na categoria atual
+                        App.categoryDataCache = App.fullData;
+                        
                         var countEl = document.getElementById('item-count'); 
                         if(countEl) countEl.innerText = t.tot_pre + App.fullData.length;
 
@@ -586,7 +583,12 @@
 
                 if(cid === 'fav') { 
                     var countEl = document.getElementById('item-count'); if(countEl) countEl.innerText = t.tot_pre + FavManager.list.length;
-                    this.req(this.creds.h+"/player_api.php?username="+this.creds.u+"&password="+this.creds.p+"&action="+actionStrm, function(d){ if(d && d!=='ERR_NET') { var favs = d.filter(function(x){ var fId = x.stream_id || x.series_id || x.id; return FavManager.isFav(fId); }); App.fullData = favs; App.renderList(); } }); 
+                    this.req(this.creds.h+"/player_api.php?username="+this.creds.u+"&password="+this.creds.p+"&action="+actionStrm, function(d){ 
+                        if(d && d!=='ERR_NET') { 
+                            var favs = d.filter(function(x){ var fId = x.stream_id || x.series_id || x.id; return FavManager.isFav(fId); }); 
+                            App.fullData = favs; App.categoryDataCache = favs; App.renderList(); 
+                        } 
+                    }); 
                 } 
                 else { 
                     var cacheKey = 'rc_strms_' + App.currentMode + '_' + cid + '_' + App.creds.u;
@@ -688,22 +690,75 @@
             syncFocusToPlaying: function() { if(!this.playingId) return; for(var i=0; i<this.fullData.length; i++) { var id = this.fullData[i].stream_id || this.fullData[i].series_id || this.fullData[i].id; if(id == this.playingId) { this.idx = i; this.updateFocus(); return; } } },
             removeAccents: function(s) { if(!s) return ""; var str = s.toLowerCase(); str = str.replace(/[áàãâä]/g, 'a'); str = str.replace(/[éèêë]/g, 'e'); str = str.replace(/[íìîï]/g, 'i'); str = str.replace(/[óòõôö]/g, 'o'); str = str.replace(/[úùûü]/g, 'u'); str = str.replace(/[ç]/g, 'c'); return str; },
 
-            doSearch: function() {
-                var rawT = document.getElementById('search').value; if(rawT.length === 0) { if(App.lastCatIdx !== undefined) { App.loadContent(App.lastCatIdx); } return; }
-                if(rawT.length < 2) return; var tStr = App.removeAccents(rawT);
-                document.getElementById('item-list').innerHTML = '<div style="padding:20px; text-align:center; color: var(--main-color); font-size: 30px;"><i class="fas fa-circle-notch fa-spin"></i></div>';
-                var actionStrm = App.currentMode === 'live' ? 'get_live_streams' : (App.currentMode === 'movie' ? 'get_vod_streams' : 'get_series');
-                App.req(App.creds.h+"/player_api.php?username="+App.creds.u+"&password="+App.creds.p+"&action="+actionStrm, function(d){ 
-                    if(d && d!=='ERR_NET') { 
-                        var res = []; var maxResults = 80; var junk = ['adulto','xxx','sex','porn','+18'];
-                        for(var i=0; i<d.length; i++) { 
-                            var nome = d[i].name || d[i].title || ""; var show = true;
-                            if(App.cfg.filter) { var lowerNome = nome.toLowerCase(); for(var j=0; j<junk.length; j++) { if(lowerNome.indexOf(junk[j]) > -1) { show = false; break; } } }
-                            if(show && App.removeAccents(nome).indexOf(tStr) > -1) { res.push(d[i]); if(res.length >= maxResults) break; } 
+            // Motor para buscar localmente enquanto digita
+            triggerSearch: function(e) {
+                if(e && e.keyCode === 13) return; // Se dar Enter, o evento keydown assume para Busca Global
+                if(App.searchTimer) clearTimeout(App.searchTimer);
+                App.searchTimer = setTimeout(function() { App.doSearch(false); }, 600);
+            },
+
+            // BUSCA HÍBRIDA (Local Rápida vs Global Profunda)
+            doSearch: function(isGlobal) {
+                var rawT = document.getElementById('search').value; 
+                if(rawT.length === 0) { 
+                    if(App.lastCatIdx !== undefined) { App.loadContent(App.lastCatIdx); } 
+                    return; 
+                }
+                if(rawT.length < 2) return; 
+                var tStr = App.removeAccents(rawT);
+                
+                var listEl = document.getElementById('item-list');
+                
+                if (isGlobal) {
+                    // == BUSCA GLOBAL NO SERVIDOR INTEIRO ==
+                    listEl.innerHTML = '<div style="padding:20px; text-align:center; color: var(--main-color); font-size: 2vh;"><i class="fas fa-circle-notch fa-spin" style="font-size: 5vh; margin-bottom: 15px;"></i><br><br>BUSCANDO NO CATÁLOGO GLOBAL...</div>';
+                    var actionStrm = App.currentMode === 'live' ? 'get_live_streams' : (App.currentMode === 'movie' ? 'get_vod_streams' : 'get_series');
+                    
+                    App.req(App.creds.h+"/player_api.php?username="+App.creds.u+"&password="+App.creds.p+"&action="+actionStrm, function(d) { 
+                        if(d && d !== 'ERR_NET') { 
+                            var res = []; var maxResults = 100; var junk = ['adulto','xxx','sex','porn','+18'];
+                            for(var i=0; i<d.length; i++) { 
+                                var nome = d[i].name || d[i].title || ""; var show = true;
+                                if(App.cfg.filter) { var lowerNome = nome.toLowerCase(); for(var j=0; j<junk.length; j++) { if(lowerNome.indexOf(junk[j]) > -1) { show = false; break; } } }
+                                if(show && App.removeAccents(nome).indexOf(tStr) > -1) { res.push(d[i]); if(res.length >= maxResults) break; } 
+                            }
+                            d = null; // Limpa o arquivo gigante da memória RAM da TV imediatamente
+                            
+                            if (res.length > 0) {
+                                res.sort(App.smartSort); App.fullData = res; App.page = 0; App.renderList(); App.zone = 2; App.idx = 0; App.updateFocus(); 
+                            } else {
+                                listEl.innerHTML = '<div style="padding:20px; text-align:center;">Nenhum resultado encontrado em todo o servidor.</div>';
+                            }
+                        } else {
+                            listEl.innerHTML = '<div style="padding:20px; text-align:center;">Erro ao conectar com o servidor.</div>';
                         }
-                        d = null; res.sort(App.smartSort); App.fullData = res; App.page = 0; App.renderList(); App.zone = 2; App.idx = 0; App.updateFocus(); 
-                    }
-                }); 
+                    });
+                } else {
+                    // == BUSCA LOCAL INSTANTÂNEA ==
+                    listEl.innerHTML = '<div style="padding:20px; text-align:center; color: var(--main-color); font-size: 30px;"><i class="fas fa-circle-notch fa-spin"></i></div>';
+                    setTimeout(function() {
+                        var baseData = App.categoryDataCache || App.fullData;
+                        if (!baseData || baseData.length === 0) {
+                            listEl.innerHTML = '<div style="padding:20px; text-align:center;">'+App.i18n[App.cfg.lang].empty+'</div>';
+                            return;
+                        }
+
+                        var res = [];
+                        for(var i=0; i<baseData.length; i++) { 
+                            var nome = baseData[i].name || baseData[i].title || ""; 
+                            if(App.removeAccents(nome).indexOf(tStr) > -1) { 
+                                res.push(baseData[i]); 
+                            } 
+                        }
+                        
+                        if (res.length > 0) {
+                            App.fullData = res; App.page = 0; App.renderList(); App.zone = 2; App.idx = 0; App.updateFocus(); 
+                        } else {
+                            // Dica visual ensinando o usuário a apertar Enter para buscar globalmente
+                            listEl.innerHTML = '<div style="padding:20px; text-align:center; font-size:1.8vh; color:#888;">Não encontrado nesta categoria.<br><br><b style="color:var(--main-color);">APERTE ENTER PARA BUSCA GLOBAL</b></div>';
+                        }
+                    }, 50);
+                }
             },
             
             handleVideoTap: function(e) {
@@ -773,14 +828,18 @@
                 if(this.scr===0) { if(this.idx === 3) this.login(false); else if(this.idx < 3) this.move(1); }
                 if(this.scr===1) { if(this.idx === 4) this.logout(); else if(this.idx === 3) this.openSettings(); else if(this.idx === 0) this.openMode('live'); else if(this.idx === 1) this.openMode('movie'); else if(this.idx === 2) this.openMode('series'); }
                 if(this.scr===3) { if(this.idx === 1) this.toggleLang(); if(this.idx === 2) this.toggleCfg('filter'); if(this.idx === 3) this.toggleFormat(); if(this.idx === 4) this.closeSettings(); }
-                if(this.scr===2) { if(this.zone===0) this.catClick(this.idx); if(this.zone===1) this.doSearch(); if(this.zone===2) { App.clickItem(); } if(this.zone===3) this.toggleFull(); }
+                if(this.scr===2) { if(this.zone===0) this.catClick(this.idx); if(this.zone===1) this.doSearch(true); if(this.zone===2) { App.clickItem(); } if(this.zone===3) this.toggleFull(); }
             }
         };
 
         document.addEventListener('keydown', function(e) {
             var k=e.keyCode;
             if(document.activeElement && document.activeElement.tagName === 'INPUT' && App.scr === 0) { if(k === 13 || k === 40) { e.preventDefault(); App.move(1); return; } if(k === 38) { e.preventDefault(); App.move(0); return; } return; }
-            if(App.scr === 2 && document.activeElement && document.activeElement.tagName === 'INPUT') { if(k === 13) { App.doSearch(); return; } if(k === 40) { e.preventDefault(); App.zone=2; App.idx=0; App.updateFocus(); return; } return; }
+            if(App.scr === 2 && document.activeElement && document.activeElement.tagName === 'INPUT') { 
+                if(k === 13) { App.doSearch(true); return; } // APERTOU ENTER NA BUSCA: FAZ BUSCA GLOBAL
+                if(k === 40) { e.preventDefault(); App.zone=2; App.idx=0; App.updateFocus(); return; } 
+                return; 
+            }
             if(k===48 || k===96) { if(App.scr===2 && App.zone===2) { var it=App.fullData[App.idx]; if(it) { var itId = it.stream_id || it.series_id || it.id; FavManager.toggle(itId); } } }
             
             var isVOD = (App.currentMode !== 'live' && App.scr === 2); var isFull = document.getElementById('vid-box').classList.contains('fs');
